@@ -1,30 +1,13 @@
 #!/usr/bin/env bash
 set -o nounset -o pipefail -o errexit
 
-SSH_DIR=$HOME/.ssh
-SSH_TMP_KEY=${SSH_DIR}/ssm-ssh-tmp
-
 die () { echo "[${0##*/}] $*" >&2; exit 1; }
-make_ssh_keys () { ssh-keygen -t rsa -N '' -f ${SSH_TMP_KEY} -C ssh-over-ssm; }
-clean_ssh_keys () { rm -f ${SSH_TMP_KEY}{,.pub}; }
 
-[[ $# -ne 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user>"
+[[ $# -ne 3 ]] && die "usage: ${0##*/} <instance-id> <ssh user> <pub key path>"
 [[ ! $1 =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
+[[ ! -f $3 ]] && die "error: pub key file does not exist"
 
-if [[ $(basename -- $(ps -o comm= -p $PPID)) != "ssh" ]]; then
-  exec ssh -o IdentityFile="${SSH_TMP_KEY}" -o ProxyCommand="$0 $1 $2" "$2@$1"
-elif pr="$(grep -sl --exclude='*-env' "$1" ${SSH_DIR}/ssmtool-*)"; then
-  export AWS_PROFILE=${AWS_PROFILE:-${pr##*ssmtool-}}
-fi
-
-# get ssh key from agent or generate a temp key
-if ssh-add -l >/dev/null 2>&1; then
-  SSH_PUB_KEY="$(ssh-add -L |head -1)"
-else
-  [[ -f ${SSH_TMP_KEY}.pub ]] || make_ssh_keys
-  trap clean_ssh_keys EXIT
-  SSH_PUB_KEY="$(< ${SSH_TMP_KEY}.pub)"
-fi
+SSH_PUB_KEY=$(cat "$3")
 
 # command to put our public key on the remote server (user must already exist)
 ssm_cmd=$(cat <<EOF
